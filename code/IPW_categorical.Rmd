@@ -1,0 +1,294 @@
+---
+title: "IP Weighting for Categorical Exposures"
+author: "Ashley I Naimi & Brian W Whitcomb"
+date: "`r paste0('Spring ', 2024)`" #format(Sys.Date(), '%Y')
+urlcolor: blue
+link-citations: yes
+output: html_document
+---
+
+# Importing Data
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=40),tidy=TRUE)
+
+```
+
+This file serves as the supplementary material to *Inverse Probability Weighting for Categorical Exposures* published in the *American Journal of Epidemiology* in the AJE Classroom Section. The purpose is to demonstrate how to construct inverse probability weights for a categorical exposure using the R programming language.
+
+We begin with importing the NHEFS data:
+
+```{r tidy = F, warning = F, message = F}
+
+#' Install and load relevant packages (using pacman)
+pacman::p_load(
+  rio,          
+  here,         
+  skimr,        
+  tidyverse,     
+  lmtest,
+  sandwich,
+  broom,
+  ggpubr
+  )
+
+thm <- theme_classic() +
+  theme(
+    legend.position = "top",
+    legend.background = element_rect(fill = "transparent", colour = NA),
+    legend.key = element_rect(fill = "transparent", colour = NA)
+  )
+theme_set(thm)
+
+#' Data are available at the following URL
+file_loc <- url("https://bit.ly/47ECRcs")
+
+#' This begins the process of cleaning and formatting the data
+nhefs <- read_csv(file_loc) %>%
+  select(wt82_71, exercise,
+         sex, age, race, income, school) %>%
+  mutate(income=as.numeric(income>15)) %>%
+  na.omit(.) # use complete case to simplify
+
+nhefs
+
+```
+
+# IP Weighting for Categorical and Continuous Exposures
+
+To construct weights for a categorical exposure, we can use multinomial logistic regression to obtain the predicted probability of being in the **observed exposure category.** Note that many other modeling approaches can be used, depending on the estimand of interest and the assumptions one is willing to make about the propensity score model. However, multinomial logistic regression is a relatively flexible approach that will yield propensity score estimates usable in most settings. 
+
+In R, multinomial regression can be deployed using the `VGAM` package via the `vglm` function. If we assume that sex, age, race, income, and education (school) are confounders of the exercise and weight change relation, we can fit the following propensity score model:
+
+
+```{r tidy = F, warning = F, message = F}
+
+pacman::p_load(VGAM)
+
+ps_mod <- vglm(factor(exercise) ~ sex + age + race + income + school, 
+               data = nhefs, 
+               family = "multinomial")
+
+summary(ps_mod)
+
+```
+
+Once this propensity score model is fit, we need to obtain predicted probabilities of being exposed in each category:
+
+```{r tidy = F, warning = F, message = F}
+
+ps_matrix <- predict(ps_mod, type = "response")
+
+ps_matrix <- data.frame(ps_matrix)
+
+names(ps_matrix) <- c("pEx0","pEx1","pEx2")
+
+nhefs <- cbind(ps_matrix, nhefs)
+
+ps_matrix <- data.frame(ps_matrix, exposure = nhefs$exercise)
+
+```
+
+Let's look at the summary distributions of each conditional probability:
+
+```{r}
+
+summary(ps_matrix[,1])
+
+summary(ps_matrix[,2])
+
+summary(ps_matrix[,3])
+
+```
+
+We can also explore the overlap in these propensity scores:
+
+```{r tidy = F, warning = F, message = F}
+
+plot_dat1 <- data.frame(ps_matrix[,c(1,4)], pEx = "pEx0")
+plot_dat2 <- data.frame(ps_matrix[,c(2,4)], pEx = "pEx1")
+plot_dat3 <- data.frame(ps_matrix[,c(3,4)], pEx = "pEx2")
+
+names(plot_dat1) <- names(plot_dat2) <- names(plot_dat3) <- c("propensity_score", 
+                                                              "Exposure", 
+                                                              "pEx")
+
+plot_dat <- rbind(plot_dat1,
+                  plot_dat2,
+                  plot_dat3)
+
+dim(plot_dat)
+dim(ps_matrix)
+
+head(ps_matrix, 10)
+
+head(plot_dat, 10)
+
+plot_dat0 <- plot_dat %>% 
+  filter(pEx == "pEx0", Exposure %in% c(0,2)) %>% 
+  mutate(Exposure = factor(Exposure))
+
+p1 <- ggplot(plot_dat0) +
+  geom_density(aes(x = propensity_score,
+                   group = Exposure,
+                   fill  = Exposure),
+               bw = .03, alpha = .25) +
+  scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("gray20", "gray")) +
+  xlab("Propensity Score") + ylab("Density")
+
+plot_dat1 <- plot_dat %>% 
+  filter(pEx == "pEx1", Exposure %in% c(1,2)) %>% 
+  mutate(Exposure = factor(Exposure))
+
+p2 <- ggplot(plot_dat1) +
+  geom_density(aes(x = propensity_score,
+                   group = Exposure,
+                   fill  = Exposure),
+               bw = .03, alpha = .25) +
+  scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("gray20", "gray")) +
+  xlab("Propensity Score") + ylab("Density")
+
+ggarrange(p1, p2, ncol = 1, labels = c("a)", "b)"))
+
+ggsave(here("figures", "ps_overlap_plot.png"),
+       width = 8, height = 16, units = "cm")
+
+```
+
+This is a propensity score overlap plot for the categorical (three level) exposure, and it does not suggest problematic overlap. If we move forward with the analysis, we need to obtain the predicted probability of the observed exposure from this propensity score matrix:
+
+```{r tidy = F, message = F, warning = F}
+
+head(ps_matrix)
+
+pscore_obs <- NULL
+for(i in 1:nrow(ps_matrix)){
+  pscore_obs <- rbind(pscore_obs,
+                  ps_matrix[i, ps_matrix[i,]$exposure + 1] # note the "+ 1"
+                  )
+}
+
+head(pscore_obs)
+
+```
+
+Each row in the `pscore_obs` object represents the predicted probability for each person being in their **observed exposure level**, conditional on the covariates in the propensity score model. With this, we can construct inverse probability weight as we did above. Note that we can stabilize these weights by including the overall mean of the observed exposure category. We can actually do this simply with an intercept only multinomial model, as we did above:
+
+```{r tidy = F, warning = F, message = F}
+
+mean(nhefs$exercise == 0)
+mean(nhefs$exercise == 1)
+mean(nhefs$exercise == 2)
+
+ps_model <- vglm(factor(exercise) ~ 1,
+               data = nhefs,
+               family = "multinomial")
+
+ps_num <- cbind(predict(ps_model, type = "response"),  nhefs$exercise)
+
+ps_num <- data.frame(ps_num)
+
+names(ps_num) <- c("p0", "p1", "p2", "exercise_level")
+
+head(ps_num)
+
+pscore_num <- NULL
+for(i in 1:nrow(ps_num)){
+  pscore_num <- rbind(pscore_num,
+                      ps_num[i, ps_num[i,]$exercise_level + 1]
+  )
+}
+
+head(pscore_num)
+
+head(pscore_obs)
+
+nhefs$sw_exercise <- pscore_num/pscore_obs
+
+head(nhefs)
+
+summary(nhefs$sw_exercise)
+
+```
+
+With these weights we can now estimate the average treatment affect between exercise and our outcome of interest (in this case, weight change). We use the `coeftest` function from the `lmtest` package along with the `sandwich` function to obtain robust variance estimates. 
+
+```{r tidy = F, warning = F, message = F}
+
+modelRD_ex <- lm(wt82_71 ~ relevel(factor(exercise),
+                                    ref = "2"),
+                 weight = sw_exercise,
+                 data = nhefs)
+
+coeftest(modelRD_ex, vcov. = vcovHC(modelRD_ex, "HC3"))
+
+coefci(modelRD_ex, vcov. = vcovHC(modelRD_ex, "HC3"))
+
+```
+
+We also deploy the bootstrap here to account for variability in the propensity score model:
+
+```{r tidy = F, warning = F, message = F}
+
+pacman::p_load(boot)
+
+boot_func <- function(data, index){
+  
+  boot_dat <- data[index,]
+  
+  # numerator model
+  num_mod <- vglm(factor(exercise) ~ 1, 
+                 data = boot_dat, 
+                 family = "multinomial")
+  
+  # denominator model
+  ps_mod <- vglm(factor(exercise) ~ sex + age + race + income + school, 
+                 data = boot_dat, 
+                 family = "multinomial")
+  
+  # denominator
+  ps_matrix <- data.frame(predict(ps_mod, type = "response"), 
+                          exposure = boot_dat$exercise)
+  pscore_obs <- NULL
+  for(i in 1:nrow(ps_matrix)){
+    pscore_obs <- rbind(pscore_obs,
+                    ps_matrix[i, ps_matrix[i,]$exposure + 1] # note the "+ 1"
+                    )
+  }
+  
+  # numerator
+  ps_matrix <- data.frame(predict(num_mod, type = "response"), 
+                          exposure = boot_dat$exercise)
+  
+  pscore_num <- NULL
+  for(i in 1:nrow(ps_matrix)){
+    pscore_num <- rbind(pscore_num,
+                        ps_matrix[i, ps_matrix[i,]$exposure + 1]
+    )
+  }
+  
+  boot_dat$sw_exercise <- pscore_num/pscore_obs
+  
+  modelRD_ex <- lm(wt82_71 ~ relevel(factor(exercise),
+                                      ref = "2"),
+                   weight = sw_exercise,
+                   data = boot_dat)
+  
+  return(summary(modelRD_ex)$coefficients[2:3, 1])
+}
+
+boot_res <- boot::boot(nhefs, boot_func, R = 2000)
+
+boot.ci(boot_res, type = "norm", index = 1)
+
+boot.ci(boot_res, type = "norm", index = 2)
+
+```
+
+
+# References
