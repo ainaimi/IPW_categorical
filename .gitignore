@@ -3,6 +3,9 @@ sandbox/*
 misc/*
 figures/*
 
+# Rproj file
+*.Rproj
+
 # Log and .tex files
 *.log
 *.tex
