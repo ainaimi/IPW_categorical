@@ -126,7 +126,7 @@ head(ps_matrix, 10)
 head(plot_dat, 10)
 
 plot_dat0 <- plot_dat %>% 
-  filter(pEx == "pEx0", Exposure %in% c(0,2)) %>% 
+  filter(pEx == "pEx0") %>% 
   mutate(Exposure = factor(Exposure))
 
 p1 <- ggplot(plot_dat0) +
@@ -136,11 +136,11 @@ p1 <- ggplot(plot_dat0) +
                bw = .03, alpha = .25) +
   scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
   scale_y_continuous(expand = c(0,0)) +
-  scale_fill_manual(values = c("gray20", "gray")) +
-  xlab("Propensity Score") + ylab("Density")
+  scale_fill_manual(values = c("black", "gray", "white")) +
+  xlab("Propensity Score: Pr(Ex = 0 | C)") + ylab("Density")
 
 plot_dat1 <- plot_dat %>% 
-  filter(pEx == "pEx1", Exposure %in% c(1,2)) %>% 
+  filter(pEx == "pEx1") %>% 
   mutate(Exposure = factor(Exposure))
 
 p2 <- ggplot(plot_dat1) +
@@ -150,13 +150,27 @@ p2 <- ggplot(plot_dat1) +
                bw = .03, alpha = .25) +
   scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
   scale_y_continuous(expand = c(0,0)) +
-  scale_fill_manual(values = c("gray20", "gray")) +
-  xlab("Propensity Score") + ylab("Density")
+  scale_fill_manual(values = c("black", "gray", "white")) +
+  xlab("Propensity Score: Pr(Ex = 1 | C)") + ylab("Density")
 
-ggarrange(p1, p2, ncol = 1, labels = c("a)", "b)"))
+plot_dat2 <- plot_dat %>% 
+  filter(pEx == "pEx2") %>% 
+  mutate(Exposure = factor(Exposure))
 
-ggsave(here("figures", "ps_overlap_plot.png"),
-       width = 8, height = 16, units = "cm")
+p3 <- ggplot(plot_dat2) +
+  geom_density(aes(x = propensity_score,
+                   group = Exposure,
+                   fill  = Exposure),
+               bw = .03, alpha = .25) +
+  scale_x_continuous(expand = c(0,0), limits = c(0,1)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("black", "gray", "white")) +
+  xlab("Propensity Score: Pr(Ex = 2 | C)") + ylab("Density")
+
+ggarrange(p1, p2, p3, ncol = 1, labels = c("a)", "b)", "c)"))
+
+ggsave(here("figures", "ps_overlap_plot_v2.png"),
+       width = 8, height = 20, units = "cm")
 
 ```
 
