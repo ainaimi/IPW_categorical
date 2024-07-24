@@ -174,7 +174,30 @@ ggsave(here("figures", "ps_overlap_plot_v2.png"),
 
 ```
 
-This is a propensity score overlap plot for the categorical (three level) exposure, and it does not suggest problematic overlap. If we move forward with the analysis, we need to obtain the predicted probability of the observed exposure from this propensity score matrix:
+This is a propensity score overlap plot for the categorical (three level) exposure, and it does not suggest problematic overlap. For a three category exposure, we can also use ternary plots to evaluate **joint** overlap in the distribution of the propensity score. Details on ternary plots are provided in the eAppendix of Yoshida et al (2019) Pharmacoepidemiol Drug Saf, Jul; 28(7): 934–941, section 3.1.
+
+In R, ternary plots can be obtained using the `ggtern` package, which is available on CRAN. Documentation and examples are available [here](http://www.ggtern.com/d/2.2.0/demo-points.html). 
+
+We can use the `ps_matrix` data object to create our ternary plot. The basic formulation is as follows:
+
+```{r tidy = F, warning = F, message = F}
+
+pacman::p_load(ggtern)
+
+# ternary plot
+ggtern(data=ps_matrix,
+       aes(x=pEx0,y=pEx1, z=pEx2)) +
+  geom_point(aes(group = factor(exposure), 
+                 color = factor(exposure)))
+
+```
+
+This plot shows how the probabilities of being in each exposure category are jointly related among those in each observed exposure category. Further details, including how to convert propensity scores to "preference scores" (which account for the baseline prevalence of each exposure category) are available in the paper by Yoshida et al. 
+
+
+# Computing the Effect Contrasts
+
+To construct stabilized weights used to estimate each of the parameters of interest outlined in the Classroom article, we need to obtain the predicted probability of the observed exposure from the propensity score matrix object:
 
 ```{r tidy = F, message = F, warning = F}
 
@@ -296,7 +319,7 @@ boot_func <- function(data, index){
   return(summary(modelRD_ex)$coefficients[2:3, 1])
 }
 
-boot_res <- boot::boot(nhefs, boot_func, R = 2000)
+boot_res <- boot::boot(nhefs, boot_func, R = 200)
 
 boot.ci(boot_res, type = "norm", index = 1)
 
