@@ -257,14 +257,21 @@ With these weights we can now estimate the average treatment affect between exer
 
 ```{r tidy = F, warning = F, message = F}
 
-modelRD_ex <- lm(wt82_71 ~ relevel(factor(exercise),
+modelRD_ex1 <- lm(wt82_71 ~ relevel(factor(exercise),
                                     ref = "2"),
                  weight = sw_exercise,
                  data = nhefs)
 
-coeftest(modelRD_ex, vcov. = vcovHC(modelRD_ex, "HC3"))
+modelRD_ex2 <- lm(wt82_71 ~ relevel(factor(exercise),
+                                    ref = "1"),
+                 weight = sw_exercise,
+                 data = nhefs)
 
-coefci(modelRD_ex, vcov. = vcovHC(modelRD_ex, "HC3"))
+coeftest(modelRD_ex1, vcov. = vcovHC(modelRD_ex1, "HC3"))
+coefci(modelRD_ex1, vcov. = vcovHC(modelRD_ex1, "HC3"))
+
+coeftest(modelRD_ex2, vcov. = vcovHC(modelRD_ex2, "HC3"))
+coefci(modelRD_ex2, vcov. = vcovHC(modelRD_ex2, "HC3"))
 
 ```
 
@@ -311,19 +318,29 @@ boot_func <- function(data, index){
   
   boot_dat$sw_exercise <- pscore_num/pscore_obs
   
-  modelRD_ex <- lm(wt82_71 ~ relevel(factor(exercise),
+  modelRD_ex1 <- lm(wt82_71 ~ relevel(factor(exercise),
                                       ref = "2"),
                    weight = sw_exercise,
                    data = boot_dat)
   
-  return(summary(modelRD_ex)$coefficients[2:3, 1])
+  modelRD_ex2 <- lm(wt82_71 ~ relevel(factor(exercise),
+                                      ref = "1"),
+                   weight = sw_exercise,
+                   data = boot_dat)
+  
+  res1 <- summary(modelRD_ex1)$coefficients[2:3, 1]
+  res2 <- summary(modelRD_ex2)$coefficients[2, 1]
+  
+  return(c(res1, res2))
 }
 
-boot_res <- boot::boot(nhefs, boot_func, R = 200)
+boot_res <- boot::boot(nhefs, boot_func, R = 2000)
 
 boot.ci(boot_res, type = "norm", index = 1)
 
 boot.ci(boot_res, type = "norm", index = 2)
+
+boot.ci(boot_res, type = "norm", index = 3)
 
 ```
 
